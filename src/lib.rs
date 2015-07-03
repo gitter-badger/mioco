@@ -107,11 +107,6 @@ where T : ReadWrite {
         }
 }
 
-/* BUG: We can guarantee that only one coroutine is running at the time so no concurrent accesses
- * are possible, but user can clone Handle and give to different threads. Boo. */
-unsafe impl<T> Send for Handle<T>
-where T : ReadWrite { }
-
 // Same as above?
 unsafe impl Send for RefCoroutine { }
 
@@ -306,6 +301,12 @@ struct RefCoroutine {
     coroutine: Rc<RefCell<Coroutine>>,
 }
 
+struct FnFakeSendWrapper<F>(F);
+
+unsafe impl<F> Send for FnFakeSendWrapper<F>
+where F : FnOnce() + 'static
+{}
+
 impl Builder {
 
     /// Create new Coroutine builder
@@ -348,14 +349,17 @@ impl Builder {
     /// `f` is routine handling connection. It should not use any blocking operations,
     /// and use it's argument for all IO with it's peer
     pub fn start<F>(self, f : F)
-        where F : FnOnce() + Send + 'static {
+        where F : FnOnce() + 'static {
 
             let ioref = RefCoroutine {
                 coroutine: self.coroutine.clone(),
             };
 
+            let f_wrapper = FnFakeSendWrapper(f);
+
             let coroutine_handle = coroutine::coroutine::Coroutine::spawn(move || {
                 ioref.coroutine.borrow_mut().coroutine = Some(coroutine::Coroutine::current().clone());
+                let FnFakeSendWrapper(f) = f_wrapper;
                 f();
                 ioref.coroutine.borrow_mut().state = State::Finished;
             });

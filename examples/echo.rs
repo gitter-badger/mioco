@@ -112,7 +112,7 @@ impl Server {
 
     fn conn_handle_finished(&mut self, token : Token, finished : bool) {
         if finished {
-            let handler = self.conns.remove(token);
+            self.conns.remove(token);
         }
     }
 
